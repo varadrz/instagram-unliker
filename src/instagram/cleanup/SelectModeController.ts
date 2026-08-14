@@ -206,8 +206,8 @@ export class SelectModeController {
     this.context.info('Clicking Oldest to newest.');
     await this.context.page.mouse.click(oldestCoords.x, oldestCoords.y);
 
-    // 4. Set Start Date: April 2024
-    this.context.info('Setting Start Date: April 2024.');
+    // 4. Set Start Date: September 2024
+    this.context.info('Setting Start Date: September 2024.');
     const dateSet = await this.context.page.evaluate(() => {
       const selects = Array.from(document.querySelectorAll('select'));
       const dateSelects = selects.filter((s) => s.getAttribute('aria-label') !== 'Switch Display Language');
@@ -233,18 +233,18 @@ export class SelectModeController {
         return true;
       }
 
-      const monthSet = setSelectValue(monthSelect, 'April') || setSelectValue(monthSelect, '4');
+      const monthSet = setSelectValue(monthSelect, 'September') || setSelectValue(monthSelect, '9');
       const yearSet = setSelectValue(yearSelect, '2024');
 
       return monthSet && yearSet;
     });
 
     if (!dateSet) {
-      this.context.warn('Could not set Start Date to April 2024.');
+      this.context.warn('Could not set Start Date to September 2024.');
       return false;
     }
 
-    // 5. Verify both Oldest to newest AND Start Date April 2024 are selected
+    // 5. Verify both Oldest to newest AND Start Date September 2024 are selected
     this.context.info('Verifying sort and date filter selections.');
     const selectionVerified = await this.context.page.evaluate((labels: string[]) => {
       // a. Verify Oldest to newest
@@ -264,7 +264,7 @@ export class SelectModeController {
         oldestOk = style.backgroundColor === 'rgb(255, 255, 255)' || style.pointerEvents === 'none';
       }
 
-      // b. Verify Start Date April 2024
+      // b. Verify Start Date September 2024
       const selects = Array.from(document.querySelectorAll('select'));
       const dateSelects = selects.filter((s) => s.getAttribute('aria-label') !== 'Switch Display Language');
       if (dateSelects.length < 3) return { oldest: oldestOk, date: false };
@@ -275,19 +275,19 @@ export class SelectModeController {
       const curMonthText = monthSelect.options[monthSelect.selectedIndex]?.textContent?.trim().toLowerCase() || '';
       const curYearText = yearSelect.options[yearSelect.selectedIndex]?.textContent?.trim() || '';
 
-      const monthOk = curMonthText === 'april' || monthSelect.value === '4';
+      const monthOk = curMonthText === 'september' || monthSelect.value === '9';
       const yearOk = curYearText === '2024' || yearSelect.value === '2024';
 
       return { oldest: oldestOk, date: monthOk && yearOk };
     }, oldestLabels);
 
     this.context.info(
-      `Selection verification - Oldest to newest: ${selectionVerified.oldest}, Start Date April 2024: ${selectionVerified.date}.`,
+      `Selection verification - Oldest to newest: ${selectionVerified.oldest}, Start Date September 2024: ${selectionVerified.date}.`,
     );
 
     if (!selectionVerified.oldest || !selectionVerified.date) {
       this.context.warn(
-        'ERROR: Verification failed before Apply. Oldest to newest or April 2024 was not selected. Aborting.',
+        'ERROR: Verification failed before Apply. Oldest to newest or September 2024 was not selected. Aborting.',
       );
       return false;
     }
