@@ -75,7 +75,7 @@ export class CleanupRunner {
 
         if (this.context.target.mode === 'likes') {
           await this.delay(2000);
-          await this.reloadLikesPageBeforeNextBatch();
+          await this.switchTabToCommentsAndBackToLikes();
         }
         continue;
       }
@@ -117,35 +117,113 @@ export class CleanupRunner {
 
       if (this.context.target.mode === 'likes') {
         await this.delay(2000);
-        await this.reloadLikesPageBeforeNextBatch();
+        await this.switchTabToCommentsAndBackToLikes();
       }
     }
 
     return this.context.totalProcessed;
   }
 
-  private async reloadLikesPageBeforeNextBatch(): Promise<void> {
-    this.context.info('Reloading Likes page before next batch.');
-    try {
-      await this.context.page.reload({
-        waitUntil: 'domcontentloaded',
-        timeout: 90_000,
-      });
-    } catch (error) {
+  private async switchTabToCommentsAndBackToLikes(): Promise<void> {
+    this.context.info('Switching to Comments tab.');
+
+    const commentsClicked = await this.clickTabByHrefOrText(
+      '/your_activity/interactions/comments',
+      ['Comments', 'Commentaires'],
+    );
+    if (!commentsClicked) {
       this.context.warn(
-        `Page reload did not settle cleanly: ${error instanceof Error ? error.message : String(error)}. Navigating to target URL.`,
+        'Could not locate Comments tab link via click. Navigating to Comments URL directly.',
       );
-      await this.context.page.goto(this.context.target.url, {
+      await this.context.page.goto('https://www.instagram.com/your_activity/interactions/comments/', {
         waitUntil: 'domcontentloaded',
-        timeout: 90_000,
+        timeout: 30_000,
       });
     }
 
-    await waitForDomReady(this.context.page, 90_000);
-    await waitForPageIdle(this.context.page, 10_000, 1_000);
-    this.context.info('Likes page reloaded.');
+    try {
+      await this.context.page.waitForFunction(
+        () => window.location.href.includes('/your_activity/interactions/comments'),
+        { timeout: 15_000 },
+      );
+    } catch {
+      this.context.warn('Comments view URL transition timed out.');
+    }
+    await waitForPageIdle(this.context.page, 5_000, 500);
+    this.context.info('Switched to Comments view.');
+
+    this.context.info('Switching back to Likes tab.');
+    const likesClicked = await this.clickTabByHrefOrText(
+      '/your_activity/interactions/likes',
+      ['Likes', 'J’aime', 'Jaime'],
+    );
+    if (!likesClicked) {
+      this.context.warn(
+        'Could not locate Likes tab link via click. Navigating to Likes URL directly.',
+      );
+      await this.context.page.goto(this.context.target.url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 30_000,
+      });
+    }
+
+    try {
+      await this.context.page.waitForFunction(
+        () => window.location.href.includes('/your_activity/interactions/likes'),
+        { timeout: 15_000 },
+      );
+    } catch {
+      this.context.warn('Likes view URL transition timed out.');
+    }
+    await waitForPageIdle(this.context.page, 5_000, 500);
+    this.context.info('Switched back to Likes view.');
+
     this.context.sortApplied = false;
     this.context.info('Starting next batch.');
+  }
+
+  private async clickTabByHrefOrText(
+    hrefSubstring: string,
+    textLabels: string[],
+  ): Promise<boolean> {
+    const coords = await this.context.page.evaluate(
+      (hrefSub, labels) => {
+        const elements = Array.from(
+          document.querySelectorAll('a, button, div[role="tab"], div[role="button"]'),
+        );
+        const target = elements.find((el) => {
+          const href = el.getAttribute('href');
+          if (href && href.includes(hrefSub)) {
+            return true;
+          }
+          const text = el.textContent?.trim().toLowerCase();
+          return labels.some((lbl) => text === lbl.toLowerCase());
+        });
+
+        if (!target) {
+          return null;
+        }
+
+        const rect = target.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) {
+          return null;
+        }
+
+        return {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+        };
+      },
+      hrefSubstring,
+      textLabels,
+    );
+
+    if (!coords) {
+      return false;
+    }
+
+    await this.context.page.mouse.click(coords.x, coords.y);
+    return true;
   }
 
   private async waitBeforeNextBatchIfThrottled(): Promise<void> {
