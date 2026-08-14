@@ -39,10 +39,6 @@ export class BatchActionRunner {
       throw new Error('The cleanup action button was not found. No manual fallback was attempted.');
     }
 
-    if (this.context.target.mode === 'likes') {
-      return { status: 'confirmed', count: this.context.currentSelection.count };
-    }
-
     const confirmed = await clickByLabels(this.context.page, this.context.target.confirmLabels, {
       timeout: 8000,
       preferLast: true,
@@ -54,6 +50,10 @@ export class BatchActionRunner {
       throw new Error(
         'The cleanup confirmation button was not found. No manual fallback was attempted.',
       );
+    }
+
+    if (this.context.target.mode === 'likes') {
+      return { status: 'confirmed', count: this.context.currentSelection.count };
     }
 
     await this.waitForConfirmationDialogToClose();

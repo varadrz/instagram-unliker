@@ -227,8 +227,43 @@ export class SelectModeController {
       return false;
     }
 
-    // 5. Click Apply
+    // 5. Click Apply (wait until button is actually visible and enabled)
     this.context.info('Applying sort.');
+    try {
+      await this.context.page.waitForFunction(
+        (labels: string[]) => {
+          const candidates = Array.from(
+            document.querySelectorAll('[role="button"], button, [aria-label], div, span'),
+          );
+          const found = candidates.find((el) => {
+            const ariaLabel = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+            const text = ((el as any).innerText || el.textContent || '').trim().toLowerCase();
+            return labels.some((label) => {
+              const normLabel = label.toLowerCase();
+              return ariaLabel === normLabel || text === normLabel;
+            });
+          });
+          if (!found) return false;
+          const clickable = found.closest('[role="button"]') || found;
+          const rect = clickable.getBoundingClientRect();
+          const style = window.getComputedStyle(clickable);
+          const isDisabled = (clickable as any).disabled || clickable.getAttribute('aria-disabled') === 'true';
+          return (
+            rect.width > 0 &&
+            rect.height > 0 &&
+            style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            style.pointerEvents !== 'none' &&
+            !isDisabled
+          );
+        },
+        { timeout: 5000, polling: 50 },
+        applyLabels,
+      );
+    } catch {
+      // Proceed to attempt finding coordinates
+    }
+
     const applyCoords = await this.findElementCoordinates(applyLabels);
     if (!applyCoords) {
       this.context.warn('The Sort & filter Apply button was not found.');
