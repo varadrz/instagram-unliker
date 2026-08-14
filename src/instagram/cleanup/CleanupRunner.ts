@@ -4,6 +4,7 @@ import { PostVisibilityVerifier } from './PostVisibilityVerifier.js';
 import { ScrollManager } from './ScrollManager.js';
 import { SelectionManager } from './SelectionManager.js';
 import { SelectModeController } from './SelectModeController.js';
+import { waitForDomReady, waitForPageIdle } from '../../browser/waits.js';
 
 const selectedItemsDisappearTimeoutMs = 60_000;
 
@@ -62,8 +63,21 @@ export class CleanupRunner {
 
       if (this.context.options.dryRun) {
         this.context.addProcessed(selection.count);
+        this.context.info(
+          `Batch completed: ${this.context.totalProcessed}/${this.context.options.limit ?? '∞'}.`,
+        );
         this.context.info('Dry-run mode: no deletion was performed.');
-        break;
+
+        if (this.context.hasReachedLimit) {
+          this.context.info(`Limit reached: ${this.context.options.limit}`);
+          break;
+        }
+
+        if (this.context.target.mode === 'likes') {
+          await this.delay(2000);
+          await this.reloadLikesPageBeforeNextBatch();
+        }
+        continue;
       }
 
       const actionResult = await this.actionRunner.run();
@@ -71,16 +85,18 @@ export class CleanupRunner {
         continue;
       }
 
-      const remainingSignatures = await this.postVisibilityVerifier.waitForSelectedItemsToDisappear(
-        selectedItemsDisappearTimeoutMs,
-      );
-      if (remainingSignatures.length > 0) {
-        const remainingAfterRefresh =
-          await this.postVisibilityVerifier.refreshAndCollectRemainingSelectedItems();
+      if (this.context.target.mode !== 'likes') {
+        const remainingSignatures = await this.postVisibilityVerifier.waitForSelectedItemsToDisappear(
+          selectedItemsDisappearTimeoutMs,
+        );
+        if (remainingSignatures.length > 0) {
+          const remainingAfterRefresh =
+            await this.postVisibilityVerifier.refreshAndCollectRemainingSelectedItems();
 
-        if (remainingAfterRefresh.length > 0) {
-          this.handlePossibleThrottle(remainingAfterRefresh);
-          continue;
+          if (remainingAfterRefresh.length > 0) {
+            this.handlePossibleThrottle(remainingAfterRefresh);
+            continue;
+          }
         }
       }
 
@@ -90,9 +106,46 @@ export class CleanupRunner {
       this.context.info(
         `Processed batch: ${processed} item(s). Total processed: ${this.context.totalProcessed}.`,
       );
+      this.context.info(
+        `Batch completed: ${this.context.totalProcessed}/${this.context.options.limit ?? '∞'}.`,
+      );
+
+      if (this.context.hasReachedLimit) {
+        this.context.info(`Limit reached: ${this.context.options.limit}`);
+        break;
+      }
+
+      if (this.context.target.mode === 'likes') {
+        await this.delay(2000);
+        await this.reloadLikesPageBeforeNextBatch();
+      }
     }
 
     return this.context.totalProcessed;
+  }
+
+  private async reloadLikesPageBeforeNextBatch(): Promise<void> {
+    this.context.info('Reloading Likes page before next batch.');
+    try {
+      await this.context.page.reload({
+        waitUntil: 'domcontentloaded',
+        timeout: 90_000,
+      });
+    } catch (error) {
+      this.context.warn(
+        `Page reload did not settle cleanly: ${error instanceof Error ? error.message : String(error)}. Navigating to target URL.`,
+      );
+      await this.context.page.goto(this.context.target.url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 90_000,
+      });
+    }
+
+    await waitForDomReady(this.context.page, 90_000);
+    await waitForPageIdle(this.context.page, 10_000, 1_000);
+    this.context.info('Likes page reloaded.');
+    this.context.sortApplied = false;
+    this.context.info('Starting next batch.');
   }
 
   private async waitBeforeNextBatchIfThrottled(): Promise<void> {

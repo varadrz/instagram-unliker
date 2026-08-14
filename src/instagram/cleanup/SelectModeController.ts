@@ -108,7 +108,7 @@ export class SelectModeController {
 
   private async applyOldestToNewestSort(): Promise<boolean> {
     if (this.context.hasAppliedSortOnce) {
-      this.context.info('Re-applying sort after recovery.');
+      this.context.info('Reapplying sort: Oldest to newest.');
     } else {
       this.context.info('Applying sort: Oldest to newest.');
     }
