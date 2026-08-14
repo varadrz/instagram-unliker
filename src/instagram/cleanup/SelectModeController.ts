@@ -31,6 +31,23 @@ export class SelectModeController {
         return;
       }
 
+      await this.context.page
+        .waitForFunction(
+          (labels: string[]) => {
+            const candidates = Array.from(
+              document.querySelectorAll('button, [role="button"], a, [tabindex="0"], [aria-label], div, span'),
+            );
+            return candidates.some((el) => {
+              const text = ((el as any).innerText || el.textContent || '').trim().toLowerCase();
+              const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+              return labels.some((lbl) => text === lbl.toLowerCase() || aria === lbl.toLowerCase());
+            });
+          },
+          { timeout: 5000, polling: 50 },
+          this.context.target.selectLabels,
+        )
+        .catch(() => {});
+
       const selected = await clickByLabels(this.context.page, this.context.target.selectLabels, {
         timeout: 10_000,
         exact: true,
@@ -189,45 +206,93 @@ export class SelectModeController {
     this.context.info('Clicking Oldest to newest.');
     await this.context.page.mouse.click(oldestCoords.x, oldestCoords.y);
 
-    // 4. Verify selected state immediately via DOM polling
-    this.context.info('Verifying selected state.');
-    let selectedState: { isSelected: boolean; backgroundColor: string; pointerEvents: string } | null = null;
-    try {
-      await this.context.page.waitForFunction(
-        (labels: string[]) => {
-          const candidates = Array.from(
-            document.querySelectorAll('[role="button"], button, [aria-label], div, span'),
-          );
-          const found = candidates.find((el) => {
-            const ariaLabel = (el.getAttribute('aria-label') || '').trim().toLowerCase();
-            const text = ((el as any).innerText || el.textContent || '').trim().toLowerCase();
-            return labels.some((label) => {
-              const normLabel = label.toLowerCase();
-              return ariaLabel === normLabel || text === normLabel;
-            });
-          });
-          if (!found) return false;
-          const clickable = found.closest('[role="button"]') || found;
-          const style = window.getComputedStyle(clickable);
-          return style.backgroundColor === 'rgb(255, 255, 255)' || style.pointerEvents === 'none';
-        },
-        { timeout: 2000, polling: 50 },
-        oldestLabels,
-      );
-      selectedState = await this.verifyOldestSelectedState(oldestLabels);
-    } catch {
-      selectedState = await this.verifyOldestSelectedState(oldestLabels);
-    }
+    // 4. Set Start Date: April 2024
+    this.context.info('Setting Start Date: April 2024.');
+    const dateSet = await this.context.page.evaluate(() => {
+      const selects = Array.from(document.querySelectorAll('select'));
+      const dateSelects = selects.filter((s) => s.getAttribute('aria-label') !== 'Switch Display Language');
+      if (dateSelects.length < 3) return false;
 
-    const isSelected = selectedState ? selectedState.isSelected : false;
-    this.context.info(`Oldest to newest selected: ${isSelected}.`);
+      const monthSelect = dateSelects[0] as HTMLSelectElement;
+      const yearSelect = dateSelects[2] as HTMLSelectElement;
 
-    if (!isSelected) {
-      this.context.warn('ERROR: Oldest to newest was not selected. Aborting before any selection/deletion.');
+      function setSelectValue(selectEl: HTMLSelectElement, targetValueOrText: string) {
+        const options = Array.from(selectEl.options);
+        const match = options.find((opt) => {
+          const text = (opt.textContent || '').trim().toLowerCase();
+          const val = opt.value.trim().toLowerCase();
+          const norm = targetValueOrText.toLowerCase();
+          return text === norm || val === norm;
+        });
+
+        if (!match) return false;
+
+        selectEl.value = match.value;
+        selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+        selectEl.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      }
+
+      const monthSet = setSelectValue(monthSelect, 'April') || setSelectValue(monthSelect, '4');
+      const yearSet = setSelectValue(yearSelect, '2024');
+
+      return monthSet && yearSet;
+    });
+
+    if (!dateSet) {
+      this.context.warn('Could not set Start Date to April 2024.');
       return false;
     }
 
-    // 5. Click Apply (wait until button is actually visible and enabled)
+    // 5. Verify both Oldest to newest AND Start Date April 2024 are selected
+    this.context.info('Verifying sort and date filter selections.');
+    const selectionVerified = await this.context.page.evaluate((labels: string[]) => {
+      // a. Verify Oldest to newest
+      const candidates = Array.from(document.querySelectorAll('[role="button"], button, [aria-label], div, span'));
+      const found = candidates.find((el) => {
+        const ariaLabel = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+        const text = ((el as any).innerText || el.textContent || '').trim().toLowerCase();
+        return labels.some((label) => {
+          const normLabel = label.toLowerCase();
+          return ariaLabel === normLabel || text === normLabel;
+        });
+      });
+      let oldestOk = false;
+      if (found) {
+        const clickable = found.closest('[role="button"]') || found;
+        const style = window.getComputedStyle(clickable);
+        oldestOk = style.backgroundColor === 'rgb(255, 255, 255)' || style.pointerEvents === 'none';
+      }
+
+      // b. Verify Start Date April 2024
+      const selects = Array.from(document.querySelectorAll('select'));
+      const dateSelects = selects.filter((s) => s.getAttribute('aria-label') !== 'Switch Display Language');
+      if (dateSelects.length < 3) return { oldest: oldestOk, date: false };
+
+      const monthSelect = dateSelects[0] as HTMLSelectElement;
+      const yearSelect = dateSelects[2] as HTMLSelectElement;
+
+      const curMonthText = monthSelect.options[monthSelect.selectedIndex]?.textContent?.trim().toLowerCase() || '';
+      const curYearText = yearSelect.options[yearSelect.selectedIndex]?.textContent?.trim() || '';
+
+      const monthOk = curMonthText === 'april' || monthSelect.value === '4';
+      const yearOk = curYearText === '2024' || yearSelect.value === '2024';
+
+      return { oldest: oldestOk, date: monthOk && yearOk };
+    }, oldestLabels);
+
+    this.context.info(
+      `Selection verification - Oldest to newest: ${selectionVerified.oldest}, Start Date April 2024: ${selectionVerified.date}.`,
+    );
+
+    if (!selectionVerified.oldest || !selectionVerified.date) {
+      this.context.warn(
+        'ERROR: Verification failed before Apply. Oldest to newest or April 2024 was not selected. Aborting.',
+      );
+      return false;
+    }
+
+    // 6. Click Apply (wait until button is actually visible and enabled)
     this.context.info('Applying sort.');
     try {
       await this.context.page.waitForFunction(
