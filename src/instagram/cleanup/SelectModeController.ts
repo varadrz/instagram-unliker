@@ -119,17 +119,66 @@ export class SelectModeController {
 
     // 1. Open Sort & filter
     this.context.info('Opening Sort & filter.');
-    const btnCoords = await this.findElementCoordinates(sortFilterLabels);
+    let btnCoords = await this.findElementCoordinates(sortFilterLabels);
+    if (!btnCoords) {
+      try {
+        await this.context.page.waitForFunction(
+          (labels: string[]) => {
+            const candidates = Array.from(
+              document.querySelectorAll('button, [role="button"], a, [tabindex="0"], [aria-label], div, span'),
+            );
+            return candidates.some((el) => {
+              const ariaLabel = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+              const text = ((el as any).innerText || el.textContent || '').trim().toLowerCase();
+              return labels.some((label) => {
+                const normLabel = label.toLowerCase();
+                return ariaLabel === normLabel || text === normLabel;
+              });
+            });
+          },
+          { timeout: 3000, polling: 50 },
+          sortFilterLabels,
+        );
+        btnCoords = await this.findElementCoordinates(sortFilterLabels);
+      } catch {
+        this.context.warn('The Sort & filter button was not found.');
+        return false;
+      }
+    }
+
     if (!btnCoords) {
       this.context.warn('The Sort & filter button was not found.');
       return false;
     }
 
     await this.context.page.mouse.click(btnCoords.x, btnCoords.y);
-    await new Promise((resolve) => setTimeout(resolve, 3000));
 
-    // 2. Locate Oldest to newest
-    const oldestCoords = await this.findElementCoordinates(oldestLabels);
+    // 2. Locate Oldest to newest (fast DOM polling)
+    let oldestCoords: { x: number; y: number } | null = null;
+    try {
+      await this.context.page.waitForFunction(
+        (labels: string[]) => {
+          const candidates = Array.from(
+            document.querySelectorAll('button, [role="button"], a, [tabindex="0"], [aria-label], div, span'),
+          );
+          return candidates.some((el) => {
+            const ariaLabel = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+            const text = ((el as any).innerText || el.textContent || '').trim().toLowerCase();
+            return labels.some((label) => {
+              const normLabel = label.toLowerCase();
+              return ariaLabel === normLabel || text === normLabel;
+            });
+          });
+        },
+        { timeout: 3000, polling: 50 },
+        oldestLabels,
+      );
+      oldestCoords = await this.findElementCoordinates(oldestLabels);
+    } catch {
+      this.context.warn('The Oldest to newest option was not found.');
+      return false;
+    }
+
     if (!oldestCoords) {
       this.context.warn('The Oldest to newest option was not found.');
       return false;
@@ -139,11 +188,37 @@ export class SelectModeController {
     // 3. Click Oldest to newest
     this.context.info('Clicking Oldest to newest.');
     await this.context.page.mouse.click(oldestCoords.x, oldestCoords.y);
-    await new Promise((resolve) => setTimeout(resolve, 3000));
 
-    // 4. Verify selected state
+    // 4. Verify selected state immediately via DOM polling
     this.context.info('Verifying selected state.');
-    const selectedState = await this.verifyOldestSelectedState(oldestLabels);
+    let selectedState: { isSelected: boolean; backgroundColor: string; pointerEvents: string } | null = null;
+    try {
+      await this.context.page.waitForFunction(
+        (labels: string[]) => {
+          const candidates = Array.from(
+            document.querySelectorAll('[role="button"], button, [aria-label], div, span'),
+          );
+          const found = candidates.find((el) => {
+            const ariaLabel = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+            const text = ((el as any).innerText || el.textContent || '').trim().toLowerCase();
+            return labels.some((label) => {
+              const normLabel = label.toLowerCase();
+              return ariaLabel === normLabel || text === normLabel;
+            });
+          });
+          if (!found) return false;
+          const clickable = found.closest('[role="button"]') || found;
+          const style = window.getComputedStyle(clickable);
+          return style.backgroundColor === 'rgb(255, 255, 255)' || style.pointerEvents === 'none';
+        },
+        { timeout: 2000, polling: 50 },
+        oldestLabels,
+      );
+      selectedState = await this.verifyOldestSelectedState(oldestLabels);
+    } catch {
+      selectedState = await this.verifyOldestSelectedState(oldestLabels);
+    }
+
     const isSelected = selectedState ? selectedState.isSelected : false;
     this.context.info(`Oldest to newest selected: ${isSelected}.`);
 
@@ -161,16 +236,39 @@ export class SelectModeController {
     }
 
     await this.context.page.mouse.click(applyCoords.x, applyCoords.y);
-    await new Promise((resolve) => setTimeout(resolve, 3000));
 
-    // 6. Verify modal is closed
-    const isClosed = !(await this.isApplyButtonVisible(applyLabels));
-    if (!isClosed) {
-      this.context.warn('The Sort & filter modal did not close after clicking Apply.');
-      return false;
+    // 6. Verify modal is closed immediately via DOM polling
+    try {
+      await this.context.page.waitForFunction(
+        (labels: string[]) => {
+          const candidates = Array.from(
+            document.querySelectorAll('[role="button"], button, [aria-label], div, span'),
+          );
+          const found = candidates.find((el) => {
+            const ariaLabel = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+            const text = ((el as any).innerText || el.textContent || '').trim().toLowerCase();
+            return labels.some((label) => {
+              const normLabel = label.toLowerCase();
+              return ariaLabel === normLabel || text === normLabel;
+            });
+          });
+          if (!found) return true;
+          const clickable = found.closest('[role="button"]') || found;
+          const rect = clickable.getBoundingClientRect();
+          const style = window.getComputedStyle(clickable);
+          return rect.width === 0 || rect.height === 0 || style.display === 'none' || style.visibility === 'hidden';
+        },
+        { timeout: 3000, polling: 50 },
+        applyLabels,
+      );
+    } catch {
+      const isClosed = !(await this.isApplyButtonVisible(applyLabels));
+      if (!isClosed) {
+        this.context.warn('The Sort & filter modal did not close after clicking Apply.');
+        return false;
+      }
     }
 
-    await waitForPageIdle(this.context.page, 10_000, 1_000);
     this.context.info('Sort applied successfully.');
     this.context.hasAppliedSortOnce = true;
     return true;

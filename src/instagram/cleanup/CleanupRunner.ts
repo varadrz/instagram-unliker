@@ -4,7 +4,8 @@ import { PostVisibilityVerifier } from './PostVisibilityVerifier.js';
 import { ScrollManager } from './ScrollManager.js';
 import { SelectionManager } from './SelectionManager.js';
 import { SelectModeController } from './SelectModeController.js';
-import { waitForDomReady, waitForPageIdle } from '../../browser/waits.js';
+import { getTranslationValues } from '../../translations/loadTranslations.js';
+import { uniqueStrings } from '../../utils/text.js';
 
 const selectedItemsDisappearTimeoutMs = 60_000;
 
@@ -74,8 +75,8 @@ export class CleanupRunner {
         }
 
         if (this.context.target.mode === 'likes') {
-          await this.delay(2000);
-          await this.switchTabToCommentsAndBackToLikes();
+          await this.delay(1000);
+          await this.fastTabSwitchToCommentsAndBackToLikes();
         }
         continue;
       }
@@ -116,41 +117,25 @@ export class CleanupRunner {
       }
 
       if (this.context.target.mode === 'likes') {
-        await this.delay(2000);
-        await this.switchTabToCommentsAndBackToLikes();
+        await this.delay(1000);
+        await this.fastTabSwitchToCommentsAndBackToLikes();
       }
     }
 
     return this.context.totalProcessed;
   }
 
-  private async switchTabToCommentsAndBackToLikes(): Promise<void> {
+  private async fastTabSwitchToCommentsAndBackToLikes(): Promise<void> {
     this.context.info('Switching to Comments tab.');
-
     const commentsClicked = await this.clickTabByHrefOrText(
       '/your_activity/interactions/comments',
       ['Comments', 'Commentaires'],
     );
     if (!commentsClicked) {
-      this.context.warn(
-        'Could not locate Comments tab link via click. Navigating to Comments URL directly.',
-      );
-      await this.context.page.goto('https://www.instagram.com/your_activity/interactions/comments/', {
-        waitUntil: 'domcontentloaded',
-        timeout: 30_000,
-      });
+      this.context.warn('Could not locate Comments tab link via click.');
     }
 
-    try {
-      await this.context.page.waitForFunction(
-        () => window.location.href.includes('/your_activity/interactions/comments'),
-        { timeout: 15_000 },
-      );
-    } catch {
-      this.context.warn('Comments view URL transition timed out.');
-    }
-    await waitForPageIdle(this.context.page, 5_000, 500);
-    this.context.info('Switched to Comments view.');
+    await this.delay(1000);
 
     this.context.info('Switching back to Likes tab.');
     const likesClicked = await this.clickTabByHrefOrText(
@@ -158,26 +143,32 @@ export class CleanupRunner {
       ['Likes', 'J’aime', 'Jaime'],
     );
     if (!likesClicked) {
-      this.context.warn(
-        'Could not locate Likes tab link via click. Navigating to Likes URL directly.',
-      );
-      await this.context.page.goto(this.context.target.url, {
-        waitUntil: 'domcontentloaded',
-        timeout: 30_000,
-      });
+      this.context.warn('Could not locate Likes tab link via click.');
     }
 
+    const sortFilterLabels = uniqueStrings(
+      getTranslationValues(this.context.translations, ['sortFilter', 'filter']),
+    );
     try {
       await this.context.page.waitForFunction(
-        () => window.location.href.includes('/your_activity/interactions/likes'),
-        { timeout: 15_000 },
+        (labels: string[]) => {
+          const elements = Array.from(
+            document.querySelectorAll('button, [role="button"], a, [aria-label], div, span'),
+          );
+          return elements.some((el) => {
+            const text = (el.textContent || '').trim().toLowerCase();
+            const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+            return labels.some((lbl) => text === lbl.toLowerCase() || aria === lbl.toLowerCase() || text.includes(lbl.toLowerCase()));
+          });
+        },
+        { timeout: 5_000, polling: 50 },
+        sortFilterLabels,
       );
     } catch {
-      this.context.warn('Likes view URL transition timed out.');
+      // Proceed directly to sort re-application
     }
-    await waitForPageIdle(this.context.page, 5_000, 500);
-    this.context.info('Switched back to Likes view.');
 
+    this.context.info('Switched back to Likes view.');
     this.context.sortApplied = false;
     this.context.info('Starting next batch.');
   }
