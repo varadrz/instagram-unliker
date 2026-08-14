@@ -20,6 +20,8 @@ export class CleanupContext {
   };
   public lastToast: CleanupToastResult | null = null;
   public lastMutation: InstagramMutationResult | null = null;
+  public sortApplied = false;
+  public hasAppliedSortOnce = false;
   private throttleCooldownMs = 0;
   private pendingThrottleCooldownWaitMs = 0;
 

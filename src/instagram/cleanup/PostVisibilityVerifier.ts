@@ -78,6 +78,7 @@ export class PostVisibilityVerifier {
   }
 
   private async refreshPage(timeout: number): Promise<void> {
+    this.context.sortApplied = false;
     try {
       await this.context.page.reload({ waitUntil: 'domcontentloaded', timeout });
     } catch (error) {

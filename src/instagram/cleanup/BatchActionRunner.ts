@@ -201,6 +201,7 @@ export class BatchActionRunner {
 
     await this.delay(this.context.consumeThrottleCooldownWait());
 
+    this.context.sortApplied = false;
     try {
       await this.context.page.reload({ waitUntil: 'domcontentloaded', timeout: 90_000 });
     } catch (error) {

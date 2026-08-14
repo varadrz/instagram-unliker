@@ -13,6 +13,13 @@
   "sort": ["Trier"],
   "filter": ["Filtrer"],
   "sortFilter": ["Trier et filtrer", "Filtrer"],
+  "oldestToNewest": [
+    "Du plus ancien au plus récent",
+    "Du plus ancien au plus recent",
+    "Plus ancien au plus récent",
+    "Plus anciens aux plus récents",
+    "Plus anciens aux plus recents"
+  ],
   "apply": ["Appliquer"],
   "done": ["Terminé"],
   "cancel": ["Annuler"],

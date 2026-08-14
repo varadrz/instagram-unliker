@@ -9,6 +9,7 @@ export const defaultTranslations = {
   sort: ['Sort'],
   filter: ['Filter'],
   sortFilter: ['Sort & filter', 'Sort and filter'],
+  oldestToNewest: ['Oldest to newest', 'Oldest to Newest'],
   apply: ['Apply'],
   done: ['Done'],
   cancel: ['Cancel'],
