@@ -159,6 +159,15 @@ If Instagram appears to throttle a cleanup batch, the script waits longer, refre
 
 `--recover-on-error` is enabled by default. When cleanup loses track of Instagram, the script refreshes the activity page and retries instead of stopping. Use `--no-recover-on-error` if you prefer the program to stop on the first unrecovered cleanup error.
 
+## Rate Limiting & HTTP 429
+
+Instagram actively monitors and rate-limits rapid account interactions. If the tool receives an `HTTP 429 (Too Many Requests)` response, it means Instagram's security firewall has temporarily locked your session/account from loading the activity history or performing deletions.
+
+### Best Practices to Avoid 429 Blocks:
+* **Increase Click Delays**: Avoid ultra-fast click speeds (such as `20:40` ms). Use more human-like intervals like `--click-delay 1000:2000` (1–2 seconds) or `--click-delay 1500:3500`.
+* **Lower Batch Sizes**: Keep `--batch-size` to reasonable levels (e.g., `20` to `50` items per page refresh) to stay under the platform's action thresholds.
+* **Cooldown Periods**: If you hit a 429 block, stop the script and let your Instagram account rest for at least **1 to 4 hours** (or up to 24 hours) before retrying. Continuous immediate retries will prolong the lockout duration.
+
 ## Notes
 
 - Instagram changes its UI often, so the script uses visible text and accessibility labels, we do not know nor want to know the real Instagram private API.
